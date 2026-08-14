@@ -1,6 +1,6 @@
 {
   "name": "dsh-img",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "description": "Give text-only models eyes: an analyze_image tool for DeepSeek Harness, backed by free Chinese vision APIs (GLM-4V-Flash / Qwen-VL) or any OpenAI-compatible vision endpoint. 给纯文本模型装上眼睛。",
   "type": "module",
   "main": "index.js",

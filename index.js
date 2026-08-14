@@ -273,9 +273,17 @@ export function apply(ctx, config) {
       const signal = options.signal ?? new AbortController().signal
       const transcoded = []
       for (const message of messages) {
-        transcoded.push(hasImageBlock(message?.content)
-          ? { ...message, content: await transcodeContent(message.content, signal) }
-          : message)
+        if (!hasImageBlock(message?.content)) {
+          transcoded.push(message)
+          continue
+        }
+        const content = await transcodeContent(message.content, signal)
+        // An image-only message carries no stated intent; without a hint the
+        // model improvises (or follows instructions visible in the picture).
+        const hasText = content.some(b => b?.type === 'text' && b.text?.trim())
+        transcoded.push(message.role === 'user' && !hasText
+          ? { ...message, content: [...content, { type: 'text', text: '（用户只发了图片，没有附带文字；请基于上面的图片转述理解图片并回应。）' }] }
+          : { ...message, content })
       }
       yield* llm.stream({ ...options, messages: transcoded })
     })()
