@@ -48,6 +48,14 @@ export ZHIPU_API_KEY=your-key-here
     apiKeyEnv: MY_GATEWAY_KEY
 ```
 
+## 两种用法（Two ways to see）
+
+**① 对话框直接发图（0.2.0+，默认开启）**——直接把图片贴进 dsh web 对话框即可。插件会把附件图片先转译成文字描述，再交给纯文本模型。看到"当前模型不支持图片"是 0.1.x 的旧行为，升级后不会再出现。
+
+**② `analyze_image` 工具**——让 agent 读磁盘上的图片文件（headless / SDK / 子代理场景也能用）：
+
+> 用 analyze_image 看一下 ./screenshot.png 里写了什么
+
 ## 配置项（Config）
 
 | 字段 | 默认 | 说明 |
@@ -59,6 +67,8 @@ export ZHIPU_API_KEY=your-key-here
 | `timeoutMs` | `60000` | 单次请求超时 |
 | `maxImageMB` | `10` | 图片大小上限 |
 | `detail` | `auto` | `auto` / `low` / `high` |
+| `chatBridge` | `true` | 对话框直发图：声明图片输入能力 + 请求前把附件转译成文字 |
+| `bridgePrompt` | 内置 | 附件转译时发给视觉模型的问题 |
 
 ## 工具（Tool）
 
