@@ -1,4 +1,4 @@
-# dsh-image-bridge
+# dsh-img
 
 给纯文本模型装上眼睛 · **Give text-only models eyes** — a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that adds an `analyze_image` tool, bridging any text-only coding agent to a vision API.
 
@@ -9,7 +9,7 @@
 ## 安装（Install）
 
 ```sh
-dsh plugin --profile web add dsh-image-bridge
+dsh plugin --profile web add dsh-img
 # 重启 dsh web / Restart the server
 ```
 
@@ -29,7 +29,7 @@ export ZHIPU_API_KEY=your-key-here
 
 ```yaml
 - id: image-bridge
-  name: dsh-image-bridge
+  name: dsh-img
   config:
     preset: qwen        # zhipu | qwen | custom
 ```
@@ -40,7 +40,7 @@ export ZHIPU_API_KEY=your-key-here
 
 ```yaml
 - id: image-bridge
-  name: dsh-image-bridge
+  name: dsh-img
   config:
     preset: custom
     baseURL: https://your-gateway/v1
@@ -84,7 +84,7 @@ export ZHIPU_API_KEY=your-key-here
 A zero-build plugin for DeepSeek Harness. One command to install, one env var to configure, and your text-only model (e.g. DeepSeek's chat route) gains image understanding through the `analyze_image` tool. Ships with free Chinese vision backends (Zhipu GLM-4V-Flash, Qwen-VL) and a `custom` preset for any OpenAI-compatible endpoint.
 
 ```sh
-dsh plugin --profile web add dsh-image-bridge
+dsh plugin --profile web add dsh-img
 export ZHIPU_API_KEY=...   # free at https://open.bigmodel.cn/
 ```
 

@@ -4,7 +4,7 @@ import { extname, isAbsolute, resolve } from 'node:path'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import Schema from '@deepseek-ai/schemastery'
 
-export const name = 'dsh-image-bridge'
+export const name = 'dsh-img'
 export const inject = ['tools']
 
 /**
