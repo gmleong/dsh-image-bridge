@@ -8,18 +8,34 @@
 
 ## 安装（Install）
 
+**前置条件**：Node.js ≥ 20；已装 dsh 本体（`npm i -g @deepseek-ai/dsh`，跑 `dsh web` 能开 http://127.0.0.1:3080 即可）；智谱免费 key 一分钟申请：https://open.bigmodel.cn/
+
+**① 装插件（一条命令）**
+
 ```sh
 dsh plugin --profile web add dsh-img
-# 重启 dsh web / Restart the server
 ```
 
-设置 API key（智谱免费申请：https://open.bigmodel.cn/ ）：
+它会在 `~/.dsh/profiles/web/` 里执行 pnpm 安装并登记 bundle。如果报"找不到版本"，是 npm 镜像同步延迟，绕开镜像走官方源：
 
 ```sh
-export ZHIPU_API_KEY=your-key-here
+cd ~/.dsh/profiles/web && pnpm add dsh-img --registry https://registry.npmjs.org
 ```
 
-然后对 agent 说：
+**② 配 API key**
+
+```sh
+export ZHIPU_API_KEY=your-key-here   # 写进 ~/.zshrc 才持久
+```
+
+**③ 重启服务（key 必须注入到 dsh 进程）**
+
+```sh
+pkill -f "dsh web"
+ZHIPU_API_KEY=your-key-here dsh web
+```
+
+**④ 新建会话**，直接贴图进对话框，或对 agent 说：
 
 > 用 analyze_image 看一下 ./screenshot.png 里写了什么
 
@@ -84,10 +100,13 @@ export ZHIPU_API_KEY=your-key-here
 
 | 报错 | 原因与解法 |
 |---|---|
-| `Vision API key not found` | 没设环境变量；按上方设置 `ZHIPU_API_KEY` 或改 `apiKeyEnv` |
+| `Vision API key not found` | key 没注入 dsh 进程；按上方第三步带 key 重启 |
 | `Vision API HTTP 401` | key 错误或未开通对应模型 |
 | `Unsupported image type` | 转了不支持的格式；先转成 png/jpg |
 | `Image too large` | 超过 `maxImageMB`；调大配置或压缩图片 |
+| 所有工具调用崩 `reading 'prepare'` | 装的是 ≤0.2.3 旧版（双实例 bug）；`pnpm add dsh-img@latest` 升级 |
+| 贴图后模型答非所问 | 检查图里是否有旧指令文字——模型会把图中文字当上下文读 |
+| 旧会话持续报 tool_calls 错 | 该会话已被旧 bug 毒化（append-only 日志），新建会话即可 |
 
 ## English
 
