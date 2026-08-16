@@ -7,9 +7,11 @@ import { promisify } from 'node:util'
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import Schema from '@deepseek-ai/schemastery'
+import potrace from 'potrace'
 import sharp from 'sharp'
 
 const execFileAsync = promisify(execFile)
+const trace = promisify(potrace.trace)
 
 export const name = 'dsh-img'
 export const inject = ['tools', 'llm', 'attachments']
@@ -88,6 +90,10 @@ export const Config = Schema.object({
     .description('Tesseract language pack(s) for local OCR, e.g. "chi_sim+eng".'),
   pixelDiffSampleMax: Schema.number().default(1024)
     .description('Longest edge used when downsampling images for pixel-diff (bounds CPU cost).'),
+  traceSteps: Schema.number().default(4)
+    .description('Posterization color steps for vision_trace (potrace).'),
+  foregroundTolerance: Schema.number().default(40)
+    .description('Max color distance when flood-filling the background for vision_extract_foreground.'),
 })
 
 // ── Backend resolution ──────────────────────────────────────────────────
@@ -558,6 +564,124 @@ export function apply(ctx, config) {
       }
       const [x1, y1, x2, y2] = m[0].split(',').map(Number)
       return { box: `${x1},${y1},${x2},${y2}`, x1, y1, x2, y2, model }
+    },
+  }))
+
+  // ── vision_trace (local, potrace SVG vectorization) ───────────────────
+  ctx.tools.register(defineTool({
+    name: 'vision_trace',
+    description: [
+      'Vectorize a bitmap image into an SVG path (potrace posterization),',
+      'purely locally — ideal for icons, logos, and line art. No API key.',
+    ].join(' '),
+    parameters: {
+      path: { type: 'string', required: true, description: 'Image path (png/jpg/bmp).' },
+      steps: { type: 'number', description: 'Posterization color steps (default from config, e.g. 4).' },
+      out: { type: 'string', description: 'Output SVG path. Defaults to <name>.svg beside the source.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          svgLength: { type: 'number' },
+        },
+        additionalProperties: false,
+      },
+      render: (_a, v) => [{ type: 'text', text: `traced → ${v.path} (${v.svgLength} bytes)` }],
+    },
+    timeoutMs: config.timeoutMs,
+    isConcurrencySafe: () => true,
+    async execute(args) {
+      const filePath = isAbsolute(args.path) ? args.path : resolve(process.cwd(), args.path)
+      const ext = extname(filePath).toLowerCase()
+      if (!['.png', '.jpg', '.jpeg', '.bmp'].includes(ext)) {
+        throw new Error(`vision_trace supports .png/.jpg/.bmp (got "${ext}")`)
+      }
+      const steps = args.steps ?? config.traceSteps ?? 4
+      const svg = await trace(filePath, { steps: Math.max(1, steps) })
+      const out = args.out ?? join(dirOf(filePath), `${basename(filePath, ext)}.svg`)
+      await writeFile(out, svg, 'utf8')
+      return { path: out, svgLength: svg.length }
+    },
+  }))
+
+  // ── vision_extract_foreground (local, border flood fill cutout) ───────
+  ctx.tools.register(defineTool({
+    name: 'vision_extract_foreground',
+    description: [
+      'Cut out the foreground from a uniform background via border flood fill:',
+      'pixels connected to the image border and close to the corner color become',
+      'transparent. Outputs a transparent PNG. Fully local, no API key.',
+    ].join(' '),
+    parameters: {
+      path: { type: 'string', required: true, description: 'Image path (png/jpg/webp).' },
+      tolerance: { type: 'number', description: 'Max color distance to treat as background (default from config).' },
+      out: { type: 'string', description: 'Output PNG path. Defaults to <name>.fg.png beside the source.' },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: {
+          path: { type: 'string' },
+          width: { type: 'number' },
+          height: { type: 'number' },
+          removedPixels: { type: 'number' },
+        },
+        additionalProperties: false,
+      },
+      render: (_a, v) => [{ type: 'text', text: `cutout → ${v.path} (removed ${v.removedPixels} bg px)` }],
+    },
+    timeoutMs: config.timeoutMs,
+    isConcurrencySafe: () => false,
+    async execute(args) {
+      const filePath = isAbsolute(args.path) ? args.path : resolve(process.cwd(), args.path)
+      const tolerance = args.tolerance ?? config.foregroundTolerance ?? 40
+
+      const raw = await sharp(filePath).removeAlpha().ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+      const { data, info } = raw
+      const w = info.width, h = info.height
+      const channels = info.channels // 4 (RGBA after ensureAlpha)
+
+      // Reference background color = top-left corner pixel.
+      const bg = [data[0], data[1], data[2]]
+
+      const dist = (o) => {
+        const dr = data[o] - bg[0], dg = data[o + 1] - bg[1], db = data[o + 2] - bg[2]
+        return Math.sqrt(dr * dr + dg * dg + db * db)
+      }
+
+      const visited = new Uint8Array(w * h)
+      const queue = []
+      let removed = 0
+
+      const tryPush = (x, y) => {
+        if (x < 0 || y < 0 || x >= w || y >= h) return
+        const idx = y * w + x
+        if (visited[idx]) return
+        visited[idx] = 1
+        const o = idx * channels
+        if (dist(o) <= tolerance) {
+          queue.push(idx)
+        }
+      }
+
+      // Seed from all border pixels.
+      for (let x = 0; x < w; x++) { tryPush(x, 0); tryPush(x, h - 1) }
+      for (let y = 0; y < h; y++) { tryPush(0, y); tryPush(w - 1, y) }
+
+      while (queue.length > 0) {
+        const idx = queue.pop()
+        const o = idx * channels
+        data[o + 3] = 0 // make transparent
+        removed++
+        const x = idx % w, y = (idx / w) | 0
+        tryPush(x - 1, y); tryPush(x + 1, y); tryPush(x, y - 1); tryPush(x, y + 1)
+      }
+
+      const out = args.out ?? join(dirOf(filePath), `${basename(filePath, extname(filePath))}.fg.png`)
+      await sharp(data, { raw: { width: w, height: h, channels: 4 } }).png().toFile(out)
+      return { path: out, width: w, height: h, removedPixels: removed }
     },
   }))
 

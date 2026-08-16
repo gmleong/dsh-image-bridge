@@ -4,7 +4,7 @@
 
 - 🇨🇳 **零成本开箱**：默认接智谱 **GLM-4V-Flash（免费）**，备选通义 **Qwen-VL（免费额度）**
 - 🔁 **多后端自动回退**：配置一个 `backends` 列表，按顺序 failover，一个挂了自动切下一个
-- 🧰 **本地像素工具（无需 key）**：`vision_crop` / `vision_pixel_diff` / `vision_colors` / `vision_ocr`（本地 tesseract）完全不调视觉 API
+- 🧰 **本地像素工具（无需 key）**：`vision_crop` / `vision_pixel_diff` / `vision_colors` / `vision_ocr`（本地 tesseract）/ `vision_trace`（SVG 矢量化）/ `vision_extract_foreground`（抠图）完全不调视觉 API
 - 💾 **识别结果缓存**：按图片内容 + 问题 hash 持久化到 `~/.dsh/dsh-img-cache/`，重复调用不重复花钱
 - 📦 **npm 一键安装**：纯 JavaScript、零构建步骤
 - 🔌 **任意端点**：`custom` 预设支持任何 OpenAI 兼容视觉端点（中转站 / 自建 vLLM / GPT-4o…）
@@ -85,6 +85,8 @@ key 分别用 `ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `MY_GATEWAY_KEY` 注入。
 | `vision_pixel_diff(original, rebuilt, out?)` | 像素级比对：diff 比率 + 最差区域排行 + 红色热力图 |
 | `vision_colors(path, top?)` | 提取主色（hex + 占比） |
 | `vision_ocr(path)` | 本地 tesseract 转录（chi_sim+eng），失败自动转视觉后端 |
+| `vision_trace(path, steps?, out?)` | potrace 矢量化：位图 → SVG 路径（logo/图标/线稿） |
+| `vision_extract_foreground(path, tolerance?, out?)` | 边界 flood fill 抠图：均匀背景变透明，输出透明 PNG |
 
 支持 `.png .jpg .jpeg .webp .gif .bmp`。
 
@@ -102,6 +104,8 @@ key 分别用 `ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `MY_GATEWAY_KEY` 注入。
 | `cache` | `true` | 识别结果持久化缓存（`~/.dsh/dsh-img-cache/`） |
 | `ocrLang` | `chi_sim+eng` | 本地 OCR 的 tesseract 语言包 |
 | `pixelDiffSampleMax` | `1024` | pixel-diff 降采样最长边（控制 CPU） |
+| `traceSteps` | `4` | `vision_trace` 的 posterize 颜色层数 |
+| `foregroundTolerance` | `40` | `vision_extract_foreground` 的背景色容差（越大抠得越狠） |
 
 ## 排错（Troubleshooting）
 
@@ -118,7 +122,7 @@ key 分别用 `ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `MY_GATEWAY_KEY` 注入。
 
 ## English
 
-A zero-build plugin for DeepSeek Harness. One command to install, one env var to configure, and your text-only model gains image understanding through `analyze_image` — plus key-free local tools (`vision_crop`, `vision_pixel_diff`, `vision_colors`, `vision_ocr`) and an ordered multi-backend failover chain.
+A zero-build plugin for DeepSeek Harness. One command to install, one env var to configure, and your text-only model gains image understanding through `analyze_image` — plus key-free local tools (`vision_crop`, `vision_pixel_diff`, `vision_colors`, `vision_ocr`, `vision_trace`, `vision_extract_foreground`) and an ordered multi-backend failover chain.
 
 ```sh
 cd ~/.dsh/profiles/web && pnpm add dsh-img --registry https://registry.npmjs.org
