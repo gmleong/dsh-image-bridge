@@ -120,6 +120,19 @@ key 分别用 `ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `MY_GATEWAY_KEY` 注入。
 | 贴图后模型答非所问 | 检查图里是否有旧指令文字——模型会把图中文字当上下文读 |
 | 旧会话持续报 tool_calls 错 | 该会话已被旧 bug 毒化（append-only 日志），新建会话即可 |
 
+## 适用边界（Limits）
+
+本地工具各有其适用场景，超出边界效果会差，选对工具很重要：
+
+| 工具 | 适合 | 不适合 |
+|---|---|---|
+| `vision_trace` | logo / 图标 / 线稿 / 简洁几何图形 | **彩色插画、照片、有渐变的图**（potrace 是"位图→少色阶轮廓"工具，会压平成单一色块，无法保留连续色调） |
+| `vision_extract_foreground` | **均匀背景**（纯白 / 纯色底）的人/物 | 复杂背景、纹理背景（flood fill 抠不干净） |
+| `vision_pixel_diff` | 同尺寸 UI 截图、设计稿还原度比对 | 尺寸差异大、内容完全不同的两张图（无对齐意义） |
+| `vision_ocr` | 印刷体文字、屏幕截图文字 | 手写体、艺术字（识别率下降，可改用 `analyze_image` 走视觉模型） |
+
+> 想要"彩色插画转 SVG"，potrace 不是正确工具（它不做彩色矢量化）。请改用专业矢量工具（Illustrator / Inkscape 的自动描摹），或直接交给视觉模型出设计稿再人工绘制。
+
 ## English
 
 A zero-build plugin for DeepSeek Harness. One command to install, one env var to configure, and your text-only model gains image understanding through `analyze_image` — plus key-free local tools (`vision_crop`, `vision_pixel_diff`, `vision_colors`, `vision_ocr`, `vision_trace`, `vision_extract_foreground`) and an ordered multi-backend failover chain.
