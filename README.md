@@ -3,9 +3,12 @@
 给纯文本模型装上眼睛，并升级成完整的本地视觉工具链 · **Give text-only models eyes** — a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin that bridges any text-only coding agent to a vision API, plus a set of **local, key-free pixel tools** (crop / pixel-diff / colors / OCR).
 
 - 🇨🇳 **零成本开箱**：默认接智谱 **GLM-4V-Flash（免费）**，备选通义 **Qwen-VL（免费额度）**
+- 🏠 **免 key 本地模式**：`preset: ollama` 直连本地 Ollama 视觉模型（如 `minicpm-v:8b`），**零 API key、零外部依赖、不花钱**
 - 🔁 **多后端自动回退**：配置一个 `backends` 列表，按顺序 failover，一个挂了自动切下一个
 - 🧰 **本地像素工具（无需 key）**：`vision_crop` / `vision_pixel_diff` / `vision_colors` / `vision_ocr`（本地 tesseract）/ `vision_trace`（SVG 矢量化）/ `vision_extract_foreground`（抠图）完全不调视觉 API
 - 💾 **识别结果缓存**：按图片内容 + 问题 hash 持久化到 `~/.dsh/dsh-img-cache/`，重复调用不重复花钱
+- ⚙️ **设置页可视化配置**：web 端「设置 → 插件」可直接改 preset / 填 key，无需 export 环境变量
+- 🖥️ **headless 支持**：`dsh --profile headless` 下工具同样可用
 - 📦 **npm 一键安装**：纯 JavaScript、零构建步骤
 - 🔌 **任意端点**：`custom` 预设支持任何 OpenAI 兼容视觉端点（中转站 / 自建 vLLM / GPT-4o…）
 
@@ -48,7 +51,16 @@ ZHIPU_API_KEY=your-key-here dsh web
 - id: image-bridge
   name: dsh-img
   config:
-    preset: qwen        # zhipu | qwen | custom
+    preset: qwen        # zhipu | qwen | ollama | custom
+```
+
+**免 key 本地模式**（Ollama 已装视觉模型，如 `minicpm-v:8b`）：
+
+```yaml
+- id: image-bridge
+  name: dsh-img
+  config:
+    preset: ollama      # 默认 http://127.0.0.1:11434/v1 + minicpm-v:8b，无需 key
 ```
 
 **多后端回退链**（新 `backends` 字段，从左到右 failover）：
@@ -66,7 +78,12 @@ ZHIPU_API_KEY=your-key-here dsh web
         apiKeyEnv: MY_GATEWAY_KEY
 ```
 
-key 分别用 `ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `MY_GATEWAY_KEY` 注入。
+key 分别用 `ZHIPU_API_KEY` / `DASHSCOPE_API_KEY` / `MY_GATEWAY_KEY` 注入，或直接在 web 设置页填写。
+
+## 设置页 & headless
+
+- **web 设置页**：打开「设置 → 插件」→ dsh-img 卡片，可视化改 `preset`、填 `apiKey`（密文存储）。改完即时生效，无需 export 环境变量。
+- **headless**：`dsh --profile headless` 下先用 `dsh plugin --profile headless add dsh-img` 装一次，之后 8 个工具均可用（本地工具无需 key，识图类用 `preset: ollama` 或环境变量 key）。
 
 ## 工具（Tools）
 

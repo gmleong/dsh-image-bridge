@@ -6,6 +6,7 @@ import { basename, extname, isAbsolute, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 
 import { defineTool } from '@deepseek-ai/dsh-tools'
+import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import Schema from '@deepseek-ai/schemastery'
 import potrace from 'potrace'
 import sharp from 'sharp'
@@ -26,11 +27,19 @@ const PRESETS = {
     baseURL: 'https://open.bigmodel.cn/api/paas/v4',
     model: 'glm-4v-flash',
     apiKeyEnv: 'ZHIPU_API_KEY',
+    requiresKey: true,
   },
   qwen: {
     baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     model: 'qwen-vl-plus',
     apiKeyEnv: 'DASHSCOPE_API_KEY',
+    requiresKey: true,
+  },
+  ollama: {
+    baseURL: 'http://127.0.0.1:11434/v1',
+    model: 'minicpm-v:8b',
+    apiKeyEnv: null,
+    requiresKey: false,
   },
   custom: {},
 }
@@ -56,21 +65,23 @@ const DEFAULT_BRIDGE_PROMPT = [
 // vision backends that fail over left-to-right. When `backends` is omitted,
 // the single `preset` is treated as a one-element chain.
 const BackendSchema = Schema.object({
-  preset: Schema.union(['zhipu', 'qwen', 'custom']).default('zhipu')
-    .description('Backend preset: zhipu = GLM-4V-Flash (free), qwen = Qwen-VL (free quota), custom = your own OpenAI-compatible endpoint.'),
+  preset: Schema.union(['zhipu', 'qwen', 'ollama', 'custom']).default('zhipu')
+    .description('Backend preset: zhipu = GLM-4V-Flash (free), qwen = Qwen-VL (free quota), ollama = local model (key-free), custom = your own OpenAI-compatible endpoint.'),
   baseURL: Schema.string()
     .description('OpenAI-compatible base URL. Required when preset is custom; overrides the preset otherwise.'),
   model: Schema.string()
     .description('Vision model id. Overrides the preset default.'),
   apiKeyEnv: Schema.string()
-    .description('Name of the environment variable holding the API key. Defaults to the preset’s variable.'),
+    .description('Name of the environment variable holding the API key. Defaults to the preset’s variable. Omit for key-free local endpoints.'),
 })
 
 export const Config = Schema.object({
-  preset: Schema.union(['zhipu', 'qwen', 'custom']).default('zhipu')
+  preset: Schema.union(['zhipu', 'qwen', 'ollama', 'custom']).default('zhipu')
     .description('Legacy single-backend shortcut. Prefer `backends`.'),
   backends: Schema.array(BackendSchema)
     .description('Ordered vision backends; the first that answers wins, failures fall through to the next.'),
+  apiKey: Schema.string().role('secret', { visible: false })
+    .description('API key for the active single preset (zhipu/qwen/custom). Stored via the settings page; falls back to the preset environment variable when empty.'),
   baseURL: Schema.string().description('Deprecated: use a backend entry.'),
   model: Schema.string().description('Deprecated: use a backend entry.'),
   apiKeyEnv: Schema.string().description('Deprecated: use a backend entry.'),
@@ -106,6 +117,7 @@ function resolveBackends(config) {
         baseURL: (b.baseURL ?? preset.baseURL ?? '').replace(/\/+$/, ''),
         model: b.model ?? preset.model,
         apiKeyEnv: b.apiKeyEnv ?? preset.apiKeyEnv ?? 'VISION_API_KEY',
+        requiresKey: b.apiKeyEnv !== undefined ? b.apiKeyEnv !== null && b.apiKeyEnv !== '' : (preset.requiresKey !== false),
       }
     }).filter(b => b.baseURL && b.model)
   }
@@ -116,6 +128,7 @@ function resolveBackends(config) {
     baseURL: (config.baseURL ?? preset.baseURL ?? '').replace(/\/+$/, ''),
     model: config.model ?? preset.model,
     apiKeyEnv: config.apiKeyEnv ?? preset.apiKeyEnv ?? 'VISION_API_KEY',
+    requiresKey: config.apiKeyEnv !== undefined ? config.apiKeyEnv !== null && config.apiKeyEnv !== '' : (preset.requiresKey !== false),
   }
   if (!single.baseURL || !single.model) {
     throw new Error('[dsh-img] no usable vision backend configured (need baseURL + model, or a preset)')
@@ -129,16 +142,18 @@ function resolveBackends(config) {
  */
 async function callBackend(backend, image, question, cfg, signal) {
   const url = `${backend.baseURL}/chat/completions`
-  const apiKey = process.env[backend.apiKeyEnv]
-  if (!apiKey) {
-    throw new Error(`no ${backend.apiKeyEnv} in environment`)
+  const headers = { 'content-type': 'application/json' }
+  if (backend.requiresKey) {
+    // Settings-page key (runtime, secret) wins over the env var.
+    const apiKey = cfg.apiKey || process.env[backend.apiKeyEnv]
+    if (!apiKey) {
+      throw new Error(`no API key: set it in the settings page, or export ${backend.apiKeyEnv}`)
+    }
+    headers.authorization = `Bearer ${apiKey}`
   }
   const res = await fetch(url, {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
+    headers,
     signal,
     body: JSON.stringify({
       model: backend.model,
@@ -245,6 +260,35 @@ export function apply(ctx, config) {
     detail: config.detail,
     timeoutMs: config.timeoutMs,
     maxImageMB: config.maxImageMB,
+    apiKey: config.apiKey || '',
+  }
+
+  // ── Optional settings page: expose `preset` / `apiKey` / `backends` to
+  //    the web Settings → Plugins pane, so a user can point the bridge at a
+  //    backend and paste its key there instead of exporting env vars. The
+  //    headless profile has no settings service, so this is best-effort.
+  const refreshConfig = (resolved) => {
+    if (!resolved) return
+    const next = resolveBackends(resolved)
+    backends.splice(0, backends.length, ...next)
+    cfg.apiKey = resolved.apiKey ?? ''
+    cfg.detail = resolved.detail ?? config.detail
+    cfg.timeoutMs = resolved.timeoutMs ?? config.timeoutMs
+    cfg.maxImageMB = resolved.maxImageMB ?? config.maxImageMB
+  }
+  try {
+    const ns = settingsNamespace('dsh-img')
+    let current = () => config
+    installSettingsSection(ctx, ns, Config, config, {
+      setSource(thunk) {
+        current = thunk
+        refreshConfig(thunk())
+      },
+      onChange() { refreshConfig(current()) },
+    })
+  } catch (e) {
+    // settings service absent (headless) — keep composition config as-is.
+    console.warn('[dsh-img] settings page unavailable:', e?.message ?? e)
   }
 
   initCacheDir(config.cache !== false)
